@@ -30,39 +30,42 @@
 #define ALSA_FRAMES             16                 //ALSA_FRAMES is the amount of Frames read at once (this is lower for more FPS)
 #define FRAMES                  2048                //FRAMES is the total amount of Frames saved and used for FFT (this is higher for better Resolution)
 #define USED_OUTPUTS            FRAMES/2*0.8        //Half of frames are doubled (FFT Output is symmetrical) and 20% of Frequencies are too high
-#define rate                    44100
+unsigned int rate = 44100;
 
-
+//Buffers for ALSA and copying ALSA output to the FFT Thread
 int* copy_buffer[2];
 int* alsa_buffer;
-int alsa_last_written = 2;  //The last copy_buffer Index the alsa thread has written to
+
+//Thread Safety
+int alsa_last_written = 0;  //The last copy_buffer Index the alsa thread has written to
 int alsa_curr_writing = 0;   //The copy_buffer Index currently used by alsa
 int fft_curr_reading = -1;  //The bufffer Index currently used by FFT
-char *sec_last_led0;
-kiss_fft_cpx *cpx_in;
-kiss_fft_cpx *cpx_out;
-float *fft_out;
-char *last_led0;
+
+//ALSA
 snd_pcm_t *capture_handle;
 snd_pcm_format_t format;
-kiss_fft_cfg cfg;
 
-int new_stuff_to_render = 0;
-int copy_buffer_copied = 1;
+//Soundcard
+float offset;
+short channels;
 
 //Calculate values from the readings and renders them
 void *calculate_and_render(){
+    kiss_fft_cpx *cpx_in = malloc(FRAMES * sizeof(kiss_fft_cpx));
+    kiss_fft_cpx *cpx_out = malloc(FRAMES * sizeof(kiss_fft_cpx));
+    float *fft_out = malloc(USED_OUTPUTS * sizeof(int));
+    kiss_fft_cfg cfg = kiss_fft_alloc( FRAMES , 0 ,0,0 );
     while(1){
         //While this is true, ALSA is still writng it's first output after FFT unlocked it's copy_buffer
         //(cause ALSA then only has 1 copy_buffer and has to rewrite that all the time)
         while(alsa_curr_writing == alsa_last_written)
             usleep(1);
-        new_stuff_to_render = 0;
 
         //Read the newest ALSA output from the latest written buffer
         fft_curr_reading = alsa_last_written;
         for(int j = 0;j<FRAMES;j++) {
-            cpx_in[j] = (kiss_fft_cpx){.r = (copy_buffer[fft_curr_reading][j] - 22875746.0f)*0.00000001f, .i = 0};
+            cpx_in[j] = (kiss_fft_cpx){.r = (copy_buffer[fft_curr_reading][j] - offset)*0.00000001f, .i = 0};
+            //printf("%f\n",cpx_in[j].r);
         }
         fft_curr_reading = -1;
 
@@ -110,14 +113,6 @@ void *calculate_and_render(){
             if(value > 1)
                 value = 1;
 
-            /*
-            //Smoothing
-            char temp = value;
-            value = (value + 0.5*last_led0[j]+0.3*sec_last_led0[j])/1.8;
-            sec_last_led0[j] = last_led0[j];
-            last_led0[j] = temp;
-            */
-
             write_color(0,j,value);
         }
         render();
@@ -125,15 +120,48 @@ void *calculate_and_render(){
     return 0;
 }
 
-
-int main()
+int main(int argc, char* argv[])
 {
+    //Default for hwid
+    char* hwid = (char*)malloc(sizeof(char)*6);
+    strcpy(hwid,"hw:1,0");
+
+    //Parse Arguments
+    for(int i = 1;i<argc;i++){
+        if(argv[i][1] == 'c'){              //Set Soundcard ID
+            i++;
+            hwid[3] = argv[i][0];
+        } else if(argv[i][1] == 'd'){       //Set Soundcard Device ID
+            i++;
+            hwid[5] = argv[i][0];
+        } else if(argv[i][1] == 'i'){       //Find out Soundcard Info
+            find_soundcard_parameters(hwid);
+            return 0;
+        }
+        printf("%d\n",i);
+    }
+
+
+    //Init Sound
     format = SND_PCM_FORMAT_S16_LE;
-    last_led0 = malloc(LED_COUNT_0 * sizeof(char));        //Last LED Output (for smoothing)
-    sec_last_led0 = malloc(LED_COUNT_0 * sizeof(char));
-  	copy_buffer[0] = malloc(FRAMES * snd_pcm_format_width(format) / 8 * 2);
-  	copy_buffer[1] = malloc(FRAMES * snd_pcm_format_width(format) / 8 * 2);
-    alsa_buffer = malloc(FRAMES * snd_pcm_format_width(format) / 8 * 2);
+    if(initialize_sound(&capture_handle, format, &rate, &channels, hwid) != 0){
+        return 1;
+    }
+
+    //Init Soundcard info
+    switch(read_hardware_file("hw:1,0",&offset)){
+        case 1:
+            printf("Info about soundcard hasn't been determined yet, please run the programm with \"-c *cardID* -d *device* -i\" with your sound plugged in but nothing playing (!) \n ");
+            printf("Sideinfo: I have no clue why I have to do this, but all soundcards seem to have an offset in the data read from alsa, if you know how to circumvent this please mail me at paulblum00@gmail.com\n");
+            return 1;
+            break;
+        default:
+            printf("hardware Info read, offset is %f\n", offset);
+    }
+
+  	copy_buffer[0] = malloc(FRAMES * snd_pcm_format_width(format) / 8*channels);
+  	copy_buffer[1] = malloc(FRAMES * snd_pcm_format_width(format) / 8*channels);
+    alsa_buffer = malloc(FRAMES * snd_pcm_format_width(format) / 8*channels);
 
     fprintf(stdout, "copy_buffers allocated\n");
 
@@ -141,23 +169,12 @@ int main()
 
     fprintf(stdout, "led strip initialized\n");
 
-    if(initialize_sound(&capture_handle, format, rate) != 0)
-        return 0;
-
     fprintf(stdout, "sound initialized\n");
 
     fprintf(stdout, "starting main loop... (Close with Ctrl+C)\n");
 
     pthread_t render_thread_id;
-    //pthread_t read_thread_id;
 
-
-    cpx_in = malloc(FRAMES * sizeof(kiss_fft_cpx));
-    cpx_out = malloc(FRAMES * sizeof(kiss_fft_cpx));
-    fft_out = malloc(USED_OUTPUTS * sizeof(int));
-    cfg = kiss_fft_alloc( FRAMES , 0 ,0,0 );
-
-    //pthread_create(&read_thread_id, NULL, read_thread, NULL);
 
     pthread_create(&render_thread_id, NULL, calculate_and_render, NULL);
 
