@@ -13,6 +13,7 @@
 #include <alsa/asoundlib.h>
 #include <pthread.h>
 #include <unistd.h>
+#include <float.h>
 
 #include "KissFFT/kiss_fft.h"
 
@@ -27,7 +28,7 @@
 #define LED_COUNT_1             100                 //Not correct
 
 //Sound & FFT
-#define ALSA_FRAMES             16                 //ALSA_FRAMES is the amount of Frames read at once (this is lower for more FPS)
+#define ALSA_FRAMES             32                 //ALSA_FRAMES is the amount of Frames read at once (this is lower for more FPS)
 #define FRAMES                  2048                //FRAMES is the total amount of Frames saved and used for FFT (this is higher for better Resolution)
 #define USED_OUTPUTS            FRAMES/2*0.8        //Half of frames are doubled (FFT Output is symmetrical) and 20% of Frequencies are too high
 unsigned int rate = 44100;
@@ -46,11 +47,32 @@ snd_pcm_t *capture_handle;
 snd_pcm_format_t format;
 
 //Soundcard
-float offset;
+float offset;       //Position in the ALSA output that represents the waveform being at 0 (which for some reason isn't 0 and different with every card)
+float noise_level;  //Highest possible value while nothing is playing (NOTE This is the really high "raw" value without any division applied)
 short channels;
+
+void test_noise(float* max){
+
+    //Perform FFT once
+    kiss_fft_cpx *cpx_in = malloc(FRAMES * sizeof(kiss_fft_cpx));
+    kiss_fft_cpx *cpx_out = malloc(FRAMES * sizeof(kiss_fft_cpx));
+    kiss_fft_cfg cfg = kiss_fft_alloc( FRAMES , 0 ,0,0 );
+    for(int j = 0;j<FRAMES;j++) {
+        cpx_in[j] = (kiss_fft_cpx){.r = (copy_buffer[0][j] - offset), .i = 0};
+    }
+    kiss_fft(cfg, cpx_in, cpx_out);
+
+    //See if we got a new maximal value, if so then put it in max
+    for(int j = 0;j<FRAMES;j++){
+        float val = sqrt(pow(cpx_out[j].r,2)+pow(cpx_out[j].i,2))/( log2( ( rate*(j+2)/FRAMES )/16.35f) - log2( ( rate*(j+1)/FRAMES )/16.35f) );
+        if(val > *max)
+            *max = val;
+    }
+}
 
 //Calculate values from the readings and renders them
 void *calculate_and_render(){
+    printf("%f\n",offset);
     kiss_fft_cpx *cpx_in = malloc(FRAMES * sizeof(kiss_fft_cpx));
     kiss_fft_cpx *cpx_out = malloc(FRAMES * sizeof(kiss_fft_cpx));
     float *fft_out = malloc(USED_OUTPUTS * sizeof(int));
@@ -126,6 +148,19 @@ int main(int argc, char* argv[])
     char* hwid = (char*)malloc(sizeof(char)*6);
     strcpy(hwid,"hw:1,0");
 
+    //Init Sound
+    format = SND_PCM_FORMAT_S16_LE;
+    if(initialize_sound(&capture_handle, format, &rate, &channels, hwid) != 0){
+        return 1;
+    }
+
+    //Allocate buffers
+  	copy_buffer[0] = malloc(FRAMES * snd_pcm_format_width(format) / 8*channels);
+  	copy_buffer[1] = malloc(FRAMES * snd_pcm_format_width(format) / 8*channels);
+    alsa_buffer = malloc(ALSA_FRAMES * snd_pcm_format_width(format) / 8*channels);
+    fprintf(stdout, "buffers allocated\n");
+    fprintf(stdout, "audio interface prepared\n");
+
     //Parse Arguments
     for(int i = 1;i<argc;i++){
         if(argv[i][1] == 'c'){              //Set Soundcard ID
@@ -135,41 +170,58 @@ int main(int argc, char* argv[])
             i++;
             hwid[5] = argv[i][0];
         } else if(argv[i][1] == 'i'){       //Find out Soundcard Info
-            find_soundcard_parameters(hwid);
+            //Find offset
+            if(find_soundcard_offset(&offset, capture_handle, copy_buffer[0], FRAMES) != 0){
+                return 1;
+            }
+
+            printf("running noise level test...\n");
+            //Find noise level by performing a few reads and FFTs and checking the max value
+            noise_level = 0;
+            for(int j = 0;j<200;j++){
+                read_sound(capture_handle, copy_buffer[0], FRAMES);
+                test_noise(&noise_level);
+            }
+            printf("noise level found: %f\n", noise_level);
+
+            remove("hardware.info");
+
+            FILE *ptr;
+            if(!(ptr = fopen("hardware.info","w")))
+                return 1;  //Hardware Info hasn't been determined
+
+            fprintf(ptr,"%f;%f",offset, noise_level*1.05f);
+
+            fclose(ptr);
+
+            printf("noise level and offset written\n");
+
             return 0;
         }
         printf("%d\n",i);
     }
 
-
-    //Init Sound
-    format = SND_PCM_FORMAT_S16_LE;
-    if(initialize_sound(&capture_handle, format, &rate, &channels, hwid) != 0){
-        return 1;
-    }
+    fprintf(stdout, "arguments parsed\n");
 
     //Init Soundcard info
-    switch(read_hardware_file("hw:1,0",&offset)){
+    switch(read_hardware_info(&offset, &noise_level)){
         case 1:
-            printf("Info about soundcard hasn't been determined yet, please run the programm with \"-c *cardID* -d *device* -i\" with your sound plugged in but nothing playing (!) \n ");
-            printf("Sideinfo: I have no clue why I have to do this, but all soundcards seem to have an offset in the data read from alsa, if you know how to circumvent this please mail me at paulblum00@gmail.com\n");
+            printf("Info about soundcard hasn't been determined yet, please run the programm with \"-i -c *cardID* -d *device*\" with your sound plugged in but nothing playing (!) \n ");
+            printf("IMPORTANT NOTE: You'll probably have to redo this if you switch to another soundcard (but the app won't show an error if you won't, so remember to do it)\n ");
+            printf("Sideinfo: I have no clue why I have to do this, but all soundcards seem to have an offset in the data read from alsa, if you know more about this please mail me at paulblum00@gmail.com\n");
             return 1;
             break;
+        case 2:
+            printf("hardware.info file is corrupted. Please delete that file and then run the program with \"-i -c *cardID* -d *device*\" with your sound plugged in but nothing playing (!) \n");
+            printf("IMPORTANT NOTE: You'll probably have to redo this if you switch to another soundcard (but the app won't show an error if you won't, so remember to do it)\n ");
+            break;
         default:
-            printf("hardware Info read, offset is %f\n", offset);
+            printf("hardware Info read, offset is %f, noise level is %f\n", offset, noise_level);
     }
-
-  	copy_buffer[0] = malloc(FRAMES * snd_pcm_format_width(format) / 8*channels);
-  	copy_buffer[1] = malloc(FRAMES * snd_pcm_format_width(format) / 8*channels);
-    alsa_buffer = malloc(FRAMES * snd_pcm_format_width(format) / 8*channels);
-
-    fprintf(stdout, "copy_buffers allocated\n");
 
     initialize_led(LED_COUNT_0, LED_COUNT_1);
 
     fprintf(stdout, "led strip initialized\n");
-
-    fprintf(stdout, "sound initialized\n");
 
     fprintf(stdout, "starting main loop... (Close with Ctrl+C)\n");
 
@@ -177,7 +229,7 @@ int main(int argc, char* argv[])
 
 
     pthread_create(&render_thread_id, NULL, calculate_and_render, NULL);
-
+    int u = 0;
     for(;;){
 
         //Shift the alsa_buffer by ALSA_FRAMES indices to make space for a new read
@@ -189,6 +241,13 @@ int main(int argc, char* argv[])
         while(read_sound(capture_handle, alsa_buffer, ALSA_FRAMES) != 0){
             //printf("Sound read error");
             usleep(1);
+        }
+
+        if((u++)%2 == 0){
+            u -= 2;
+            hue_add++;
+            if(hue_add > 3600)
+                hue_add -= 3600;
         }
 
         //Find the next copy_buffer to use

@@ -10,6 +10,7 @@
 #include <signal.h>
 #include <stdarg.h>
 #include <getopt.h>
+#include <math.h>
 
 #include "rpi_ws281x/clk.h"
 #include "rpi_ws281x/gpio.h"
@@ -26,6 +27,7 @@
 
 //Color
 #define saturation 1000 //Planning to make this a variable
+int hue_add = 0;
 
 
 ws2811_led_t *leds0, *leds1;
@@ -56,14 +58,18 @@ ws2811_t ledstring =
     },
 };
 
+//Gets the hue of the ledID-th LED   \in[0,3600]
+int led_hue(int ledID){
+    return (int)round(3600*ledID/(float)count0 + hue_add)%3600;
+}
+
 //Gets the Color of the ledID-th LED on the Rainbow (Hue 0..300) strip with brightness value
-int getColor(int ledID, float value){
+int getColor(int16_t hue, float value){
     //I copied that HSV to RGB Code lol
     char red = 0;
     char green = 0;
     char blue = 0;
 
-    int16_t hue = (float)ledID/(count0-1)*3000;
     if(value >= 1)
         value = 1000;
     else
@@ -161,7 +167,7 @@ int initialize_led(int _count0, int _count1){
 }
 
 void write_color(int channel, int ledID, float value){
-    ledstring.channel[channel].leds[ledID] = getColor(ledID, value);
+    ledstring.channel[channel].leds[ledID] = getColor(led_hue(ledID), value);
 }
 
 int render(){
