@@ -58,9 +58,28 @@ ws2811_t ledstring =
     },
 };
 
+int render(){
+    int ret;
+    if ((ret = ws2811_render(&ledstring)) != WS2811_SUCCESS){
+        fprintf(stderr, "ws2811_render failed: %s\n", ws2811_get_return_t_str(ret));
+        return 1;
+    }
+    return 0;
+}
+
 //Gets the hue of the ledID-th LED   \in[0,3600]
 int led_hue(int ledID){
     return (int)round(3600*ledID/(float)count0 + hue_add)%3600;
+}
+
+void clear(){
+	for(int i = 0;i<count0;i++) {
+    	ledstring.channel[0].leds[i] = 0;
+	}
+	for(int i = 0;i<count1;i++) {
+    	ledstring.channel[1].leds[i] = 0;
+	}
+    render();
 }
 
 //Gets the Color of the ledID-th LED on the Rainbow (Hue 0..300) strip with brightness value
@@ -168,15 +187,6 @@ int initialize_led(int _count0, int _count1){
 
 void write_color(int channel, int ledID, float value){
     ledstring.channel[channel].leds[ledID] = getColor(led_hue(ledID), value);
-}
-
-int render(){
-    int ret;
-    if ((ret = ws2811_render(&ledstring)) != WS2811_SUCCESS){
-        fprintf(stderr, "ws2811_render failed: %s\n", ws2811_get_return_t_str(ret));
-        return 1;
-    }
-    return 0;
 }
 
 void led_tidy(){

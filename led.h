@@ -11,3 +11,4 @@ int initialize_led(int count0, int count1);
 void write_color(int channel, int ledID, float value);
 int render();
 void led_tidy();
+void clear();

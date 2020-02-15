@@ -3,7 +3,7 @@
 #include <stdlib.h>
 #include <float.h>
 
-#define TESTRUNS 50
+#define TESTRUNS 200
 
 int initialize_sound(snd_pcm_t **capture_handle, snd_pcm_format_t format, unsigned int *rate, short* channels, char* hwid) {
   	snd_pcm_hw_params_t *hw_params;
@@ -119,192 +119,38 @@ int read_hardware_info(float* offset, float* noise_level){
 
     fclose(ptr);
     return 0;
-
- /*
-    //Find out filesize
-    fseek(ptr,0, SEEK_END);
-    int fsize = ftell(ptr);
-    fseek(ptr, 0, SEEK_SET);
-
- 
-    //Read the file
-    char *read = malloc(fsize + 1);
-    fread(read, 1, fsize, ptr);
-    fclose(ptr);
-
-    printf("hardware.info read\n");
-
-
-
-    //Seach whether a line with our hwid exists
-    for(int i = 0;i<(fsize-6);i++){
-        if(strncmp(&read[i],hwid,6) == 0){
-            printf("hwid found in file\n");
-            //We found something, read it!
-            sscanf(&read[i+9],"%f;%f",offset,noise_level);
-            break;
-        }
-    }
-    return 0;
-    */
 }
 
-int find_soundcard_offset(float* offset, snd_pcm_t* capture_handle, int* alsa_buffer, int frames){
+int find_soundcard_parameters(float* offset, float* noise_level, snd_pcm_t* capture_handle, int* alsa_buffer, int frames){
 
-    printf("running offset test...\n");
+    printf("running test...\n");
 
     //Calculate average Output while (hopefully) nothing is playing
     *offset = 0;
+    float max = FLT_MIN;  //Noise Level testing
+    float min = FLT_MAX;  //Noise Level testing
     for(int i = 0;i<TESTRUNS;i++){
         //Read from ALSA
         if(read_sound(capture_handle, alsa_buffer, frames) != 0){
             printf("Sound read error");
             return 1;
         }
+        //Add to offset to calculate the average afterwards
         for(int j = 0;j<frames;j++){
             *offset += alsa_buffer[j];
+            if(alsa_buffer[j] < min)
+                min = alsa_buffer[j];
+            if(alsa_buffer[j] > max)
+                max = alsa_buffer[j];
         }
     }
     *offset /= frames*TESTRUNS;
-    printf("test finished, offset is %f\n", *offset);
+    if(max-*offset > *offset-min){
+        *noise_level = max-*offset;
+    } else{
+        *noise_level = *offset-min;
+    }
+    printf("test finished, offset is %f, noise level is %f\n", *offset, *noise_level);
     return 0;
-
-    /*
-    
-    char* new;
-
-    //Open Hardware Info file and edit it if it exists
-    if(0 == access("hardware.info", 0)){
-        FILE* ptr = fopen("hardware.info","r");
-        printf("info file opened\n");
-
-        //Find out filesize
-        fseek(ptr,0, SEEK_END);
-        int fsize = ftell(ptr);
-        fseek(ptr, 0, SEEK_SET);
- 
-        //Read the file and get ready to make a new one (with maybe a new line and/or more numbers)
-        char *read = malloc(fsize*sizeof(char));
-        printf("memory for reading allocated\n");
-        fread(read, sizeof(char), fsize, ptr);
-        printf("info file read\n");
-        //fclose(ptr);
-        printf("info file closed\n");
-        remove("hardware.info");
-        new = malloc((fsize + 50)*sizeof(char)); //Allocate Memory for a new hardware file
-
-        printf("searching for hwid\n");
-        //Search whether a line with hwid already exists
-        for(int i = 0;i<(fsize-6);i++){
-            if(strncmp(&read[i],hwid,6) == 0){
-                printf("hwid found!\n");
-                //We found something, now we have to copy everything before and after the value and insert the value inmid
-                memcpy(new, read, i + 9);                                               //Copy the content before the new value, including the hwid stuff
-                int new_string_last_position = i + 9 + sprintf(&new[i+9], "%f;0", avg); //Copy the new value and a dummy 0 for the noise_level so our file isn't corrupted
-
-                //Search for the rest to be copied
-                for(int j = i+1;j<fsize;j++){
-                    if(read[j] == ';'){
-                        memcpy(&new[new_string_last_position], &read[j-1],fsize-j);
-                        break;
-                    }
-                }
-                break;
-            }
-        }
-
-        //If we haven't done anything in the for-loop (no line with hwid exists), we have to copy the entire thing and append the new line
-        if(new[0] != 'h'){
-            printf("writing new hwid line after %d chars\n", fsize);
-            memcpy(new, read, fsize);       //Copy all
-            sprintf(&new[fsize], "%s - %f;0", hwid,avg);
-        }
-    }
-    else {  //Else we have to make a new one
-        new = malloc(30*sizeof(char));     //Allocate Memory for a new hardware file
-        sprintf(new, "%s - %f;0", hwid,avg);
-    }
-    printf("new file structure generated\n");
-
-    //(Re)write the file
-    FILE* ptr;
-    if(!(ptr = fopen("hardware.info","w"))){
-        printf("Error generating file!\n");
-        return 1;
-    }
-    printf("new file created\n");
-    fputs(new,ptr);
-    printf("offset written\n");
-
-    //fclose(ptr);
-
-
-    *offset = avg;
-
-    */
     return 0;
 }
-/*
-int write_noise_level(char* hwid, float noise_level){
-    
-    //Open Hardware Info file
-    FILE *ptr = fopen("hardware.info","a+");
-
-    printf("info file opened\n");
-
-    //Find out filesize
-    fseek(ptr,0, SEEK_END);
-    int fsize = ftell(ptr);
-    fseek(ptr, 0, SEEK_SET);
- 
-    //Read the file and get ready to make a new one (with maybe a new line and/or more numbers)
-    char *read = malloc(fsize + 1);
-    char *new = malloc(fsize + 30);
-    fread(read, 1, fsize, ptr);
-    fclose(ptr);
-
-    //Search whether a line with hwid already exists
-    for(int i = 0;i<(fsize-6);i++){
-        if(strncmp(&read[i],hwid,6) == 0){
-            //We found something, now he have to search for the start of the second number
-            int pos = -1;
-            //Search for the number seperator
-            for(int j = i;j<(fsize-6);j++){
-                if(read[j] == ';'){
-                    pos = j;
-                    break;
-                }
-            }
-            if(pos == -1)
-                return 2; //Error corrupted hardware.info
-
-            memcpy(new, read, i + 1);                                               //Copy the content before the new value, including the hwid stuff
-            int new_string_last_position = i + 1 + sprintf(&new[i+9], "%f", noise_level); //Copy the new value
-
-            //Search for whether next lines exist that have to be copied
-            for(int j = i+1;j<fsize;j++){
-                if(read[j] == 'h'){
-                    printf("found\n");
-                    memcpy(&new[new_string_last_position], &read[j-1],fsize-j);
-                    break;
-                }
-            }
-            break;
-        }
-    }
-
-    //If we haven't done anything in the for-loop (no line with hwid exists), then our file is corrupted (because write_noise_level should've already been executed)
-    if(new[0] != 'h'){
-        return 2;
-    }
-
-    //Delete and rewrite the file
-    remove("hardware.info");
-    ptr = fopen("hardware.info","w");
-    fputs(new,ptr);
-
-    printf("noise level written\n");
-
-    return 0;
-}
-*/

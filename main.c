@@ -33,6 +33,11 @@
 #define USED_OUTPUTS            FRAMES/2*0.8        //Half of frames are doubled (FFT Output is symmetrical) and 20% of Frequencies are too high
 unsigned int rate = 44100;
 
+#define LOW_READS_THRESHOLD 100
+short low_reads = 0;        //This gets +1 for every read which is entirely below noise_level, if it reaches LOWS_THRESHOLD the effect gets disabled
+
+float volume_factor = 0.00000001f; //Variability not implemented yet
+
 //Buffers for ALSA and copying ALSA output to the FFT Thread
 int* copy_buffer[2];
 int* alsa_buffer;
@@ -51,25 +56,6 @@ float offset;       //Position in the ALSA output that represents the waveform b
 float noise_level;  //Highest possible value while nothing is playing (NOTE This is the really high "raw" value without any division applied)
 short channels;
 
-void test_noise(float* max){
-
-    //Perform FFT once
-    kiss_fft_cpx *cpx_in = malloc(FRAMES * sizeof(kiss_fft_cpx));
-    kiss_fft_cpx *cpx_out = malloc(FRAMES * sizeof(kiss_fft_cpx));
-    kiss_fft_cfg cfg = kiss_fft_alloc( FRAMES , 0 ,0,0 );
-    for(int j = 0;j<FRAMES;j++) {
-        cpx_in[j] = (kiss_fft_cpx){.r = (copy_buffer[0][j] - offset), .i = 0};
-    }
-    kiss_fft(cfg, cpx_in, cpx_out);
-
-    //See if we got a new maximal value, if so then put it in max
-    for(int j = 0;j<FRAMES;j++){
-        float val = sqrt(pow(cpx_out[j].r,2)+pow(cpx_out[j].i,2))/( log2( ( rate*(j+2)/FRAMES )/16.35f) - log2( ( rate*(j+1)/FRAMES )/16.35f) );
-        if(val > *max)
-            *max = val;
-    }
-}
-
 //Calculate values from the readings and renders them
 void *calculate_and_render(){
     printf("%f\n",offset);
@@ -83,13 +69,35 @@ void *calculate_and_render(){
         while(alsa_curr_writing == alsa_last_written)
             usleep(1);
 
+        //This stays at 0 if all reads are below noise_level
+        char low_read = 1;
+
         //Read the newest ALSA output from the latest written buffer
         fft_curr_reading = alsa_last_written;
         for(int j = 0;j<FRAMES;j++) {
-            cpx_in[j] = (kiss_fft_cpx){.r = (copy_buffer[fft_curr_reading][j] - offset)*0.00000001f, .i = 0};
-            //printf("%f\n",cpx_in[j].r);
+            cpx_in[j] = (kiss_fft_cpx){.r = (copy_buffer[fft_curr_reading][j] - offset), .i = 0};
+            if(abs(cpx_in[j].r) > noise_level)
+                low_read = 0;
+            cpx_in[j].r *= volume_factor; //Has to be applied after noise_level test
         }
         fft_curr_reading = -1;
+
+        if(low_read == 0){
+            low_reads = 0;  //This will also enable the effect if it was disabled (low_reads = -1)
+        } else if(low_reads != -1){
+            low_reads++;
+            if(low_reads >= LOW_READS_THRESHOLD) //Disable the Effect
+                low_reads = -1;
+            for(int j = 0;j<LED_COUNT_0;j++){
+                write_color(0,j,0);
+            }
+            render();
+        }
+
+        if(low_reads == -1){
+            continue;
+        }
+        
 
         //Perform FFT
         kiss_fft(cfg, cpx_in, cpx_out);
@@ -161,8 +169,16 @@ int main(int argc, char* argv[])
     fprintf(stdout, "buffers allocated\n");
     fprintf(stdout, "audio interface prepared\n");
 
+    initialize_led(LED_COUNT_0, LED_COUNT_1);
+
+    fprintf(stdout, "led strip initialized\n");
+
     //Parse Arguments
     for(int i = 1;i<argc;i++){
+        if(argv[i][1] == 'e'){              //Set Soundcard ID
+            clear();
+            return 0;
+        }
         if(argv[i][1] == 'c'){              //Set Soundcard ID
             i++;
             hwid[3] = argv[i][0];
@@ -171,18 +187,9 @@ int main(int argc, char* argv[])
             hwid[5] = argv[i][0];
         } else if(argv[i][1] == 'i'){       //Find out Soundcard Info
             //Find offset
-            if(find_soundcard_offset(&offset, capture_handle, copy_buffer[0], FRAMES) != 0){
+            if(find_soundcard_parameters(&offset, &noise_level, capture_handle, copy_buffer[0], FRAMES) != 0){
                 return 1;
             }
-
-            printf("running noise level test...\n");
-            //Find noise level by performing a few reads and FFTs and checking the max value
-            noise_level = 0;
-            for(int j = 0;j<200;j++){
-                read_sound(capture_handle, copy_buffer[0], FRAMES);
-                test_noise(&noise_level);
-            }
-            printf("noise level found: %f\n", noise_level);
 
             remove("hardware.info");
 
@@ -218,10 +225,6 @@ int main(int argc, char* argv[])
         default:
             printf("hardware Info read, offset is %f, noise level is %f\n", offset, noise_level);
     }
-
-    initialize_led(LED_COUNT_0, LED_COUNT_1);
-
-    fprintf(stdout, "led strip initialized\n");
 
     fprintf(stdout, "starting main loop... (Close with Ctrl+C)\n");
 
