@@ -68,8 +68,13 @@ int render(){
 }
 
 //Gets the hue of the ledID-th LED   \in[0,3600]
-int led_hue(int ledID){
+int led_hue_flowing(float ledID){
     return (int)round(3600*ledID/(float)count0 + hue_add)%3600;
+}
+
+//Gets the hue of the ledID-th LED   \in[0,3600]
+int led_hue_natural(int ledID){
+    return (int)round(3000*ledID/(float)count0);
 }
 
 void clear(){
@@ -157,6 +162,7 @@ int getColor(int16_t hue, float value){
     return red | (green << 8) | (blue << 16);
 }
 
+//Initialize global count variables and LED String
 int initialize_led(int _count0, int _count1){
     count0 = _count0;
     count1 = _count1;
@@ -186,9 +192,25 @@ int initialize_led(int _count0, int _count1){
 }
 
 void write_color(int channel, int ledID, float value){
-    ledstring.channel[channel].leds[ledID] = getColor(led_hue(ledID), value);
+    ledstring.channel[channel].leds[ledID] = getColor(led_hue_natural
+(ledID), value);
 }
 
 void led_tidy(){
     ws2811_fini(&ledstring);
+}
+
+//Add a new color at the top of the waterfall (with hue \in [0,count0] cause it is dependent on the output of the Spectrum Analyzer effect)
+void waterfall_add(float value, float hue){
+    //Make all others go one down
+    for(int i = 0;i<(count1 - 1);i++){
+        ledstring.channel[1].leds[i] = ledstring.channel[1].leds[i+1];
+    }
+
+    //hue is \in [0,count0] (because of how it is calculated) and we want to push it away from the middle (because otherwise it is almost always in the mid)
+    //We do that by first calculating hue = hue*2/count0-1 to make it \in [-1,1], then apply f(x) = x^(1/3) (3rd root) which pushes it away from 0 and to +-1
+    //Then we reverse the transformation by (hue+1)/2*count0
+    int negative = hue < count0/2.;
+    hue = (      pow(fabs(hue*2./count0-1.) ,1./2.) * (1.-negative*2.)    +1.)/2.*count0;
+    ledstring.channel[1].leds[count1-1] = getColor(led_hue_natural(hue),value);
 }

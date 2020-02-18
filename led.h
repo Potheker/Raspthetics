@@ -12,3 +12,4 @@ void write_color(int channel, int ledID, float value);
 int render();
 void led_tidy();
 void clear();
+void waterfall_add(float value, float hue);

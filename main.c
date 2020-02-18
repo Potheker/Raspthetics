@@ -25,7 +25,7 @@
 
 //Options for ws2812
 #define LED_COUNT_0             103
-#define LED_COUNT_1             100                 //Not correct
+#define LED_COUNT_1             71
 
 //Sound & FFT
 #define ALSA_FRAMES             32                 //ALSA_FRAMES is the amount of Frames read at once (this is lower for more FPS)
@@ -79,6 +79,7 @@ void *calculate_and_render(){
             if(abs(cpx_in[j].r) > noise_level)
                 low_read = 0;
             cpx_in[j].r *= volume_factor; //Has to be applied after noise_level test
+            //printf("%f\n",cpx_in[j].r);
         }
         fft_curr_reading = -1;
 
@@ -90,6 +91,9 @@ void *calculate_and_render(){
                 low_reads = -1;
             for(int j = 0;j<LED_COUNT_0;j++){
                 write_color(0,j,0);
+            }
+            for(int j = 0;j<LED_COUNT_1;j++){
+                write_color(1,j,0);
             }
             render();
         }
@@ -119,9 +123,15 @@ void *calculate_and_render(){
             
         a..b is the Range of FFT Outputs for the j-th LED, so we want a=f^-1(j)  b=f^-1(j+1)
             */
-
         float a;
         float b = 0;
+
+        //For Second Effect, we calculate the average by Sum_j=0^count0 (j+1)*value and dividing by the total value sum (which is waterfall_value pre division) (where value \in [0,1]), then subtracting 1
+        float waterfall_hue = 0;
+
+        //For Second Effect, we calculate the average by summing the value and dividing by count (actually times the max value, but that's 1)
+        float waterfall_value = 0;
+
         for(int j = 0;j<LED_COUNT_0;j++) {
             a = b;                                                              //End of the last Frequency Range is start of the next Frequency Range
             b = (32.7*pow(2, (float)(j+1)/LED_COUNT_0*8) -32.7)/rate*FRAMES;    //f^-1(j) but I've added -32.7 and deleted -1 so it starts at the 0-th Output
@@ -144,8 +154,16 @@ void *calculate_and_render(){
                 value = 1;
 
             write_color(0,j,value);
+
+            //For second effect (see above)
+            waterfall_hue += (j+1)*value;
+            waterfall_value += value;
         }
         render();
+        waterfall_hue /= waterfall_value;   //Divide by the value sum which conveniently is waterfall_value before the division
+        waterfall_hue -= 1;                 //See above construction
+        waterfall_value /= LED_COUNT_0;
+        waterfall_add(waterfall_value,waterfall_hue);
     }
     return 0;
 }
@@ -165,7 +183,7 @@ int main(int argc, char* argv[])
     //Allocate buffers
   	copy_buffer[0] = malloc(FRAMES * snd_pcm_format_width(format) / 8*channels);
   	copy_buffer[1] = malloc(FRAMES * snd_pcm_format_width(format) / 8*channels);
-    alsa_buffer = malloc(ALSA_FRAMES * snd_pcm_format_width(format) / 8*channels);
+    alsa_buffer = malloc(FRAMES * snd_pcm_format_width(format) / 8*channels);
     fprintf(stdout, "buffers allocated\n");
     fprintf(stdout, "audio interface prepared\n");
 
@@ -230,22 +248,18 @@ int main(int argc, char* argv[])
 
     pthread_t render_thread_id;
 
-
     pthread_create(&render_thread_id, NULL, calculate_and_render, NULL);
     int u = 0;
     for(;;){
-
         //Shift the alsa_buffer by ALSA_FRAMES indices to make space for a new read
         for(int j = FRAMES-1;j>=ALSA_FRAMES;j--){
             alsa_buffer[j] = alsa_buffer[j-ALSA_FRAMES];
         }
-
         //Read from ALSA
         while(read_sound(capture_handle, alsa_buffer, ALSA_FRAMES) != 0){
             //printf("Sound read error");
             usleep(1);
         }
-
         if((u++)%2 == 0){
             u -= 2;
             hue_add++;
@@ -266,11 +280,6 @@ int main(int argc, char* argv[])
         alsa_last_written = alsa_curr_writing;
         alsa_curr_writing = -1;
     }
-    //pthread_join(read_thread_id,NULL);
-
-    free(copy_buffer);
-
-    fprintf(stdout, "copy_buffer freed\n");
         
     snd_pcm_close (capture_handle);
     fprintf(stdout, "audio interface closed\n");
