@@ -237,7 +237,7 @@ int main(int argc, char* argv[])
             return 1;
             break;
         case 2:
-            printf("hardware.info file is corrupted. Please delete that file and then run the program with \"-i -c *cardID* -d *device*\" with your sound plugged in but nothing playing (!) \n");
+            printf("hardware.info file is corrupted. Please delete that file and then run the program with \"-i -c *cardID* -d *device*\" with your sound plugged in but nothing playing (!)\n To find your cardID and device use arecord -l in Terminal.");
             printf("IMPORTANT NOTE: You'll probably have to redo this if you switch to another soundcard (but the app won't show an error if you won't, so remember to do it)\n ");
             break;
         default:
