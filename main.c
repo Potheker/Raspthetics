@@ -256,11 +256,11 @@ int main(int argc, char* argv[])
         case 1:
             printf("Info about soundcard hasn't been determined yet, please run the programm with \"-i -c *cardID* -d *device*\" with your sound plugged in but nothing playing (!) \n ");
             printf("IMPORTANT NOTE: You'll probably have to redo this if you switch to another soundcard (but the app won't show an error if you won't, so remember to do it)\n ");
-            printf("Sideinfo: I have no clue why I have to do this, but all soundcards seem to have an offset in the data read from alsa, if you know more about this please mail me at paulblum00@gmail.com\n");
+            printf("Sideinfo: I have no clue why I have to do this, but all soundcards seem to have an offset in the data read from alsa, if you know more about this please text me\n");
             return 1;
             break;
         case 2:
-            printf("hardware.info file is corrupted. Please delete that file and then run the program with \"-i -c *cardID* -d *device*\" with your sound plugged in but nothing playing (!) \n");
+            printf("hardware.info file is corrupted. Please delete that file and then run the program with \"-i -c *cardID* -d *device*\" with your sound plugged in but nothing playing (!)\n To find your cardID and device use arecord -l in Terminal.");
             printf("IMPORTANT NOTE: You'll probably have to redo this if you switch to another soundcard (but the app won't show an error if you won't, so remember to do it)\n ");
             break;
         default:
