@@ -202,15 +202,21 @@ void led_tidy(){
 
 //Add a new color at the top of the waterfall (with hue \in [0,count0] cause it is dependent on the output of the Spectrum Analyzer effect)
 void waterfall_add(float value, float hue){
+    //printf("%f\n",value);
     //Make all others go one down
+    /*for(int i = count1-1;i>0;i--){
+        ledstring.channel[1].leds[i] = ledstring.channel[1].leds[i-1];
+    }*/
+    
     for(int i = 0;i<(count1 - 1);i++){
         ledstring.channel[1].leds[i] = ledstring.channel[1].leds[i+1];
     }
 
     //hue is \in [0,count0] (because of how it is calculated) and we want to push it away from the middle (because otherwise it is almost always in the mid)
-    //We do that by first calculating hue = hue*2/count0-1 to make it \in [-1,1], then apply f(x) = x^(1/3) (3rd root) which pushes it away from 0 and to +-1
+    //We do that by first calculating hue = hue*2/count0-1 to make it \in [-1,1], then apply f(x) = x^(1/10) (10th root, we can take any n-th root, the higher n is the more it's pushed from the middle) which pushes it away from 0 and to +-1
     //Then we reverse the transformation by (hue+1)/2*count0
     int negative = hue < count0/2.;
-    hue = (      pow(fabs(hue*2./count0-1.) ,1./2.) * (1.-negative*2.)    +1.)/2.*count0;
+    hue = (      pow(fabs(hue*2./count0-1.) ,1./10.) * (1.-negative*2.)    +1.)/2.*count0;
+    //ledstring.channel[1].leds[0] = getColor(led_hue_natural(hue),value);
     ledstring.channel[1].leds[count1-1] = getColor(led_hue_natural(hue),value);
 }

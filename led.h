@@ -5,7 +5,7 @@
 #define DMA                     10
 #define STRIP_TYPE              WS2811_STRIP_GBR	// WS2812/SK6812RGB integrated chip+leds
 
-int hue_add;
+extern int hue_add;
 
 int initialize_led(int count0, int count1);
 void write_color(int channel, int ledID, float value);

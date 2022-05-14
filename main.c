@@ -24,8 +24,8 @@
 #define ARRAY_SIZE(stuff)       (sizeof(stuff) / sizeof(stuff[0]))
 
 //Options for ws2812
-#define LED_COUNT_0             103
-#define LED_COUNT_1             71
+#define LED_COUNT_0             160
+#define LED_COUNT_1             143
 
 //Sound & FFT
 #define ALSA_FRAMES             32                 //ALSA_FRAMES is the amount of Frames read at once (this is lower for more FPS)
@@ -36,7 +36,7 @@ unsigned int rate = 44100;
 #define LOW_READS_THRESHOLD 100
 short low_reads = 0;        //This gets +1 for every read which is entirely below noise_level, if it reaches LOWS_THRESHOLD the effect gets disabled
 
-float volume_factor = 0.00000001f; //Variability not implemented yet
+float volume_factor = 0.0000000004f; //Variability not implemented yet
 
 //Buffers for ALSA and copying ALSA output to the FFT Thread
 int* copy_buffer[2];
@@ -72,16 +72,32 @@ void *calculate_and_render(){
         //This stays at 0 if all reads are below noise_level
         char low_read = 1;
 
+        //DEBUG
+        float maxread = 0;
+
         //Read the newest ALSA output from the latest written buffer
         fft_curr_reading = alsa_last_written;
         for(int j = 0;j<FRAMES;j++) {
             cpx_in[j] = (kiss_fft_cpx){.r = (copy_buffer[fft_curr_reading][j] - offset), .i = 0};
+
+            //Fade the wave in/out at the beginning and end
+            if(j < 500)
+                cpx_in[j].r *= j/500.;
+            if(j > FRAMES-500)
+                cpx_in[j].r *= (FRAMES-j)/500.;
+
             if(abs(cpx_in[j].r) > noise_level)
                 low_read = 0;
-            cpx_in[j].r *= volume_factor; //Has to be applied after noise_level test
-            //printf("%f\n",cpx_in[j].r);
+            //cpx_in[j].r *= volume_factor; //Has to be applied after noise_level test
+
+            //DEBUG
+            //printf("%f\n",(float)(cpx_in[j].r));
+            if(abs(cpx_in[j].r) > maxread)
+                maxread = abs(cpx_in[j].r);
         }
+        //printf("\n");
         fft_curr_reading = -1;
+        //printf("%f\n",maxread);
 
         if(low_read == 0){
             low_reads = 0;  //This will also enable the effect if it was disabled (low_reads = -1)
@@ -108,7 +124,9 @@ void *calculate_and_render(){
 
         //Put Outputs in a better Variable and divide them by the range of the Octave Spectrum they represent ( oct(hz(i+1))-oct(hz(i)) ) to weight them
         for(int j = 0;j<USED_OUTPUTS;j++) {
-            fft_out[j] = sqrt(pow(cpx_out[j].r,2)+pow(cpx_out[j].i,2))/( log2( ( rate*(j+2)/FRAMES )/16.35f) - log2( ( rate*(j+1)/FRAMES )/16.35f) );
+            float len = sqrt(pow(cpx_out[j].r,2)+pow(cpx_out[j].i,2))*volume_factor;
+            //printf("%i: %f\n",j,len);
+            fft_out[j] = len/( log2( ( rate*(j+2)/FRAMES )/16.35f) - log2( ( rate*(j+1)/FRAMES )/16.35f) );
         }
 
 
@@ -129,8 +147,11 @@ void *calculate_and_render(){
         //For Second Effect, we calculate the average by Sum_j=0^count0 (j+1)*value and dividing by the total value sum (which is waterfall_value pre division) (where value \in [0,1]), then subtracting 1
         float waterfall_hue = 0;
 
-        //For Second Effect, we calculate the average by summing the value and dividing by count (actually times the max value, but that's 1)
+        //For Second Effect, we calculate the max of the spectrum values
         float waterfall_value = 0;
+        
+        //Self explanatory
+        float value_sum = 0;
 
         for(int j = 0;j<LED_COUNT_0;j++) {
             a = b;                                                              //End of the last Frequency Range is start of the next Frequency Range
@@ -157,12 +178,13 @@ void *calculate_and_render(){
 
             //For second effect (see above)
             waterfall_hue += (j+1)*value;
-            waterfall_value += value;
+            if(waterfall_value < value)
+                waterfall_value = value;
+            value_sum += value;
         }
         render();
-        waterfall_hue /= waterfall_value;   //Divide by the value sum which conveniently is waterfall_value before the division
+        waterfall_hue /= value_sum;
         waterfall_hue -= 1;                 //See above construction
-        waterfall_value /= LED_COUNT_0;
         waterfall_add(waterfall_value,waterfall_hue);
     }
     return 0;
@@ -215,7 +237,8 @@ int main(int argc, char* argv[])
             if(!(ptr = fopen("hardware.info","w")))
                 return 1;  //Hardware Info hasn't been determined
 
-            fprintf(ptr,"%f;%f",offset, noise_level*1.05f);
+            //fprintf(ptr,"%f;%f",offset, noise_level*1.05f);
+            fprintf(ptr,"%f;%f",offset, 0.0);
 
             fclose(ptr);
 
