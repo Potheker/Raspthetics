@@ -24,28 +24,27 @@
 #define ARRAY_SIZE(stuff)       (sizeof(stuff) / sizeof(stuff[0]))
 
 //Options for ws2812
-#define LED_COUNT_0             160
+#define LED_COUNT_0             260
 #define LED_COUNT_1             143
 
 //Sound & FFT
-#define ALSA_FRAMES             32                 //ALSA_FRAMES is the amount of Frames read at once (this is lower for more FPS)
-#define FRAMES                  2048                //FRAMES is the total amount of Frames saved and used for FFT (this is higher for better Resolution)
-#define USED_OUTPUTS            FRAMES/2*0.8        //Half of frames are doubled (FFT Output is symmetrical) and 20% of Frequencies are too high
+#define ALSA_FRAMES         32                      //ALSA_FRAMES is the amount of Frames read at once (this is lower for more FPS)
+#define FRAME_FACTOR        64                  
+#define FRAMES              ALSA_FRAMES*FRAME_FACTOR//FRAMES is the total amount of Frames saved and used for FFT (this is higher for better Resolution)
+#define USED_OUTPUTS        FRAMES/2*0.8            //Half of frames are doubled (FFT Output is symmetrical) and 20% of Frequencies are too high
+#define BUFFER_OVERSIZE     8                       //buffer size is FRAMES*BUFFER_OVERSIZE
+
 unsigned int rate = 44100;
 
 #define LOW_READS_THRESHOLD 100
 short low_reads = 0;        //This gets +1 for every read which is entirely below noise_level, if it reaches LOWS_THRESHOLD the effect gets disabled
 
-float volume_factor = 0.0000000004f; //Variability not implemented yet
+float volume_factor = 0.00008f; //Variability not implemented yet
 
-//Buffers for ALSA and copying ALSA output to the FFT Thread
-int* copy_buffer[2];
-int* alsa_buffer;
+int* alsa_buffer;   //Buffer for alsa
 
 //Thread Safety
-int alsa_last_written = 0;  //The last copy_buffer Index the alsa thread has written to
-int alsa_curr_writing = 0;   //The copy_buffer Index currently used by alsa
-int fft_curr_reading = -1;  //The bufffer Index currently used by FFT
+int alsa_curr_index = 0; //The index (of the als_buffer) to which alsa is currently writing
 
 //ALSA
 snd_pcm_t *capture_handle;
@@ -63,59 +62,31 @@ void *calculate_and_render(){
     kiss_fft_cpx *cpx_out = malloc(FRAMES * sizeof(kiss_fft_cpx));
     float *fft_out = malloc(USED_OUTPUTS * sizeof(int));
     kiss_fft_cfg cfg = kiss_fft_alloc( FRAMES , 0 ,0,0 );
+
+    //The last place in the buffer we performed fft on. (Has this default value so the code waits for the first read)
+    int fft_last_index = (BUFFER_OVERSIZE-1)*FRAMES;
+
     while(1){
-        //While this is true, ALSA is still writng it's first output after FFT unlocked it's copy_buffer
-        //(cause ALSA then only has 1 copy_buffer and has to rewrite that all the time)
-        while(alsa_curr_writing == alsa_last_written)
+        //While this is true alsa hasn't written a new buffer since the last iteration
+        while((fft_last_index+FRAMES)%(BUFFER_OVERSIZE*FRAMES) == alsa_curr_index){
             usleep(1);
+        }
 
-        //This stays at 0 if all reads are below noise_level
-        char low_read = 1;
+        //Calculate the starting index of the last FRAMES written frames
+        fft_last_index = (alsa_curr_index-FRAMES)%(BUFFER_OVERSIZE*FRAMES);
 
-        //DEBUG
-        float maxread = 0;
-
-        //Read the newest ALSA output from the latest written buffer
-        fft_curr_reading = alsa_last_written;
+        //Read the newest ALSA output
         for(int j = 0;j<FRAMES;j++) {
-            cpx_in[j] = (kiss_fft_cpx){.r = (copy_buffer[fft_curr_reading][j] - offset), .i = 0};
-
-            //Fade the wave in/out at the beginning and end
-            if(j < 500)
-                cpx_in[j].r *= j/500.;
-            if(j > FRAMES-500)
-                cpx_in[j].r *= (FRAMES-j)/500.;
-
-            if(abs(cpx_in[j].r) > noise_level)
-                low_read = 0;
-            //cpx_in[j].r *= volume_factor; //Has to be applied after noise_level test
-
-            //DEBUG
-            //printf("%f\n",(float)(cpx_in[j].r));
-            if(abs(cpx_in[j].r) > maxread)
-                maxread = abs(cpx_in[j].r);
+            float x = (alsa_buffer[(fft_last_index+j+BUFFER_OVERSIZE*FRAMES)%(BUFFER_OVERSIZE*FRAMES)] - offset)*0.00001f;
+            cpx_in[j] = (kiss_fft_cpx){.r = x, .i = x};
         }
-        //printf("\n");
-        fft_curr_reading = -1;
-        //printf("%f\n",maxread);
-
-        if(low_read == 0){
-            low_reads = 0;  //This will also enable the effect if it was disabled (low_reads = -1)
-        } else if(low_reads != -1){
-            low_reads++;
-            if(low_reads >= LOW_READS_THRESHOLD) //Disable the Effect
-                low_reads = -1;
-            for(int j = 0;j<LED_COUNT_0;j++){
-                write_color(0,j,0);
+        
+        
+        for(int j = 0;j<FRAMES;j++) {
+            if(j%ALSA_FRAMES == 0){
+                //printf("\n");
             }
-            for(int j = 0;j<LED_COUNT_1;j++){
-                write_color(1,j,0);
-            }
-            render();
-        }
-
-        if(low_reads == -1){
-            continue;
+            //printf("%i ",(int)(cpx_in[j].r));
         }
         
 
@@ -125,7 +96,7 @@ void *calculate_and_render(){
         //Put Outputs in a better Variable and divide them by the range of the Octave Spectrum they represent ( oct(hz(i+1))-oct(hz(i)) ) to weight them
         for(int j = 0;j<USED_OUTPUTS;j++) {
             float len = sqrt(pow(cpx_out[j].r,2)+pow(cpx_out[j].i,2))*volume_factor;
-            //printf("%i: %f\n",j,len);
+            printf("%i: %f\n",j,len);
             fft_out[j] = len/( log2( ( rate*(j+2)/FRAMES )/16.35f) - log2( ( rate*(j+1)/FRAMES )/16.35f) );
         }
 
@@ -133,7 +104,7 @@ void *calculate_and_render(){
             /*
                     THE NEXT PART IS ENTIRELY THE CALCULATION OF THE LED BRIGHTNESS
 
-        hz(i) = rate*(i+1)/frames, i = 0,...,frames-1         Gets the average frequency of the i-th FFT Output   (Actually rate and frames booth have to be halfed, but that shorts)
+        hz(i) = rate*(i+1)/frames, i = 0,...,frames-1         Gets the average frequency of the i-th FFT Output   (Actually rate and frames booth have to be halfed, but that shortens)
         oct(hz) = log2(hz/32.7)                               Converts the frequency to the Octave (1st Octave starts at 32.7hz) 
         LED(oct) = oct/8*LED_COUNT_0                          Converts the Octave to a position on the LED Strip
         f(i) = LED(oct(hz(i)))                                Gets the strip position of the i-th FFT Output
@@ -202,10 +173,11 @@ int main(int argc, char* argv[])
         return 1;
     }
 
-    //Allocate buffers
-  	copy_buffer[0] = malloc(FRAMES * snd_pcm_format_width(format) / 8*channels);
-  	copy_buffer[1] = malloc(FRAMES * snd_pcm_format_width(format) / 8*channels);
-    alsa_buffer = malloc(FRAMES * snd_pcm_format_width(format) / 8*channels);
+    //We make the alsa_buffer way larger so that alsa can continuously write to it and our logic can continously read
+    //With this size alsa can write to the same buffer FRAME_FACTOR*BUFFER_OVERSIZE times
+    alsa_buffer = malloc(snd_pcm_format_width(format) / 8*channels* FRAMES * BUFFER_OVERSIZE);   
+
+
     fprintf(stdout, "buffers allocated\n");
     fprintf(stdout, "audio interface prepared\n");
 
@@ -227,7 +199,7 @@ int main(int argc, char* argv[])
             hwid[5] = argv[i][0];
         } else if(argv[i][1] == 'i'){       //Find out Soundcard Info
             //Find offset
-            if(find_soundcard_parameters(&offset, &noise_level, capture_handle, copy_buffer[0], FRAMES) != 0){
+            if(find_soundcard_parameters(&offset, &noise_level, capture_handle, alsa_buffer, FRAMES) != 0){
                 return 1;
             }
 
@@ -272,36 +244,24 @@ int main(int argc, char* argv[])
     pthread_t render_thread_id;
 
     pthread_create(&render_thread_id, NULL, calculate_and_render, NULL);
-    int u = 0;
+    
+    //Maximum amount of writes before wrapping the alsa_buffer
+    int max = FRAMES*BUFFER_OVERSIZE;
+
+    //This is our alsa thread:
     for(;;){
-        //Shift the alsa_buffer by ALSA_FRAMES indices to make space for a new read
-        for(int j = FRAMES-1;j>=ALSA_FRAMES;j--){
-            alsa_buffer[j] = alsa_buffer[j-ALSA_FRAMES];
-        }
-        //Read from ALSA
-        while(read_sound(capture_handle, alsa_buffer, ALSA_FRAMES) != 0){
+        //Read from ALSA, as the space to write we give an ascending place in the alsa_buffer
+        while(read_sound(capture_handle, &alsa_buffer[alsa_curr_index], ALSA_FRAMES) != 0){
             //printf("Sound read error");
             usleep(1);
         }
-        if((u++)%2 == 0){
-            u -= 2;
-            hue_add++;
-            if(hue_add > 3600)
-                hue_add -= 3600;
+        /*
+        for(int i = 0;i<ALSA_FRAMES;i++){
+            printf("%i: %i\n",alsa_curr_index+i, alsa_buffer[alsa_curr_index+i]);
         }
-
-        //Find the next copy_buffer to use
-        if(fft_curr_reading == -1)
-            alsa_curr_writing = (alsa_last_written+1)%2;    //if FFT is not reading, just use the buffer not used last (so it switches around all times)
-        else
-            alsa_curr_writing = (fft_curr_reading+1)%2;     //if FFT is writing, use the one it isn't writing to
-
-        //Copy the alsa_buffer to the copy buffer
-        for(int j = 0;j<FRAMES;j++){
-            copy_buffer[alsa_curr_writing][j] = alsa_buffer[j];
-        }
-        alsa_last_written = alsa_curr_writing;
-        alsa_curr_writing = -1;
+        */
+        //Ascend the place in the buffer, wrap if max amount is reached.
+        alsa_curr_index = (alsa_curr_index+ALSA_FRAMES)%max;
     }
         
     snd_pcm_close (capture_handle);
