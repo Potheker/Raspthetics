@@ -41,6 +41,7 @@ lib_srcs = Split('''
     rpi_ws281x/dma.c
     rpi_ws281x/rpihw.c
     KissFFT/kiss_fft.c
+    KissFFT/kiss_fftr.c
     sound.c
     led.c
 ''')

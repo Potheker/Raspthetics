@@ -97,7 +97,7 @@ int initialize_sound(snd_pcm_t **capture_handle, snd_pcm_format_t format, unsign
     return 0;
 }
 
-int read_sound(snd_pcm_t *capture_handle, int *buffer, int frames){
+int read_sound(snd_pcm_t *capture_handle, float *buffer, int frames){
     int err;
     if ((err = snd_pcm_readi (capture_handle, buffer, frames)) != frames) {
         fprintf (stderr, "read from audio interface %d failed (%s)\n", err, snd_strerror (err));
@@ -121,14 +121,13 @@ int read_hardware_info(float* offset, float* noise_level){
     return 0;
 }
 
-int find_soundcard_parameters(float* offset, float* noise_level, snd_pcm_t* capture_handle, int* alsa_buffer, int frames){
+
+int find_soundcard_parameters(float* offset, snd_pcm_t* capture_handle, float* alsa_buffer, int frames){
 
     printf("running test...\n");
 
     //Calculate average Output while (hopefully) nothing is playing
-    *offset = 0;
-    float max = FLT_MIN;  //Noise Level testing
-    float min = FLT_MAX;  //Noise Level testing
+    double x = 0;
     for(int i = 0;i<TESTRUNS;i++){
         //Read from ALSA
         if(read_sound(capture_handle, alsa_buffer, frames) != 0){
@@ -137,20 +136,10 @@ int find_soundcard_parameters(float* offset, float* noise_level, snd_pcm_t* capt
         }
         //Add to offset to calculate the average afterwards
         for(int j = 0;j<frames;j++){
-            *offset += alsa_buffer[j];
-            if(alsa_buffer[j] < min)
-                min = alsa_buffer[j];
-            if(alsa_buffer[j] > max)
-                max = alsa_buffer[j];
+            x += alsa_buffer[j];
         }
     }
-    *offset /= frames*TESTRUNS;
-    if(max-*offset > *offset-min){
-        *noise_level = max-*offset;
-    } else{
-        *noise_level = *offset-min;
-    }
-    printf("test finished, offset is %f, noise level is %f\n", *offset, *noise_level);
-    return 0;
+    *offset = x/(frames*TESTRUNS);
+    printf("First test finished, offset is %f\n", *offset);
     return 0;
 }

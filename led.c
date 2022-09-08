@@ -25,6 +25,8 @@
 #define DMA                     10
 #define STRIP_TYPE              WS2811_STRIP_GBR	// WS2812/SK6812RGB integrated chip+leds
 
+#define SHIFT_0                 10                  //Shifts LEDs on strip 0
+
 //Color
 #define saturation 1000 //Planning to make this a variable
 int hue_add = 0;
@@ -90,6 +92,11 @@ void clear(){
 //Gets the Color of the ledID-th LED on the Rainbow (Hue 0..300) strip with brightness value
 int getColor(int16_t hue, float value){
     //I copied that HSV to RGB Code lol
+
+    if(hue < 500){
+        //value *= 1.5;
+    }
+
     char red = 0;
     char green = 0;
     char blue = 0;
@@ -164,7 +171,7 @@ int getColor(int16_t hue, float value){
 
 //Initialize global count variables and LED String
 int initialize_led(int _count0, int _count1){
-    count0 = _count0;
+    count0 = _count0 + SHIFT_0;
     count1 = _count1;
     ledstring.channel[0].count = count0;
     ledstring.channel[1].count = count1;
@@ -192,8 +199,7 @@ int initialize_led(int _count0, int _count1){
 }
 
 void write_color(int channel, int ledID, float value){
-    ledstring.channel[channel].leds[ledID] = getColor(led_hue_natural
-(ledID), value);
+    ledstring.channel[channel].leds[ledID+SHIFT_0] = getColor(led_hue_natural(ledID), value);
 }
 
 void led_tidy(){
