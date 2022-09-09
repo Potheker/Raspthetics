@@ -21,4 +21,4 @@ An audio spectrum analyzer for the Raspberry Pi, using a soundcard and an addres
 
 # Usage
 
-Just run the code with `sudo ./raspthetics -c1 -d0` if 1 is your card ID and 0 is your device ID. Card 1 and device 0 are the default.
+Use `scons` to compile and run the code with `sudo ./raspthetics -c1 -d0` if 1 is your card ID and 0 is your device ID. Card 1 and device 0 are the default.
