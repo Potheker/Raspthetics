@@ -19,10 +19,6 @@ An audio spectrum analyzer for the Raspberry Pi, using a soundcard and an addres
 
 5. *Optional*. Run `sudo ./raspthetics -i` once while nothing is played back to determine the background noise level. The main code will then be able to disable the LEDs if only noise is present.
 
-#Usage
+# Usage
 
 Just run the code with `sudo ./raspthetics -c1 -d0` if 1 is your card ID and 0 is your device ID. Card 1 and device 0 are the default.
-
-#More settings
-
-You can change quite some stuff about the effect. Look into the defines in main.c, I tried documenting them throroughly.
