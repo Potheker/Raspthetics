@@ -37,7 +37,6 @@
 
 //Color
 #define saturation 1000 //Planning to make this a variable
-int hue_add = 0;
 
 
 ws2811_led_t *leds0, *leds1;
@@ -76,11 +75,6 @@ int render(){
         return 1;
     }
     return 0;
-}
-
-//Gets the hue of the ledID-th LED   \in[0,3600]
-int led_hue_flowing(float ledID){
-    return (int)round(3600*ledID/(float)count0 + hue_add)%3600;
 }
 
 //Gets the hue of the ledID-th LED   \in[0,3600]
@@ -231,6 +225,4 @@ void waterfall_add(float value, float hue){
         }
         ledstring.channel[1].leds[0] = getColor(led_hue_natural(hue),value);
     }
-    
-    
 }

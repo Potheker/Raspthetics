@@ -368,16 +368,11 @@ int main(int argc, char* argv[])
 
     //Parse Arguments
     for(int i = 1;i<argc;i++){
-        if(argv[i][1] == 'c'){              //Clear LEDs
-            clear();
-            return 0;
-        }
         if(argv[i][1] == 'c'){              //Set Soundcard ID
-            hwid[7] = argv[i][2];
+            hwid[7] = argv[i][1];
         } else if(argv[i][1] == 'd'){       //Set Soundcard Device ID
-            i++;
-            hwid[9] = argv[i][2];
-        } else if(argv[i][1] == 'i'){       //Find out Soundcard Info
+            hwid[9] = argv[i][1];
+        } else if(argv[i][1] == 'i'){       //Find Soundcard Info
             //Find offset
             if(find_soundcard_parameters(&offset, capture_handle, alsa_buffer, FRAMES) != 0){
                 return 1;
