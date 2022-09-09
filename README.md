@@ -1,10 +1,28 @@
-# rpi_ws281x_musicSync
+# Raspthetics
+An audio spectrum analyzer for the Raspberry Pi, using a soundcard and an addressable LED strip on the GPIO ports. Additionally a second waterfall-style effect on a second strip is included.
 
-sudo apt-get install libasound2-dev
-sudo apt-get install scons
-scons
+# Prerequisites
 
-# Usage
-First enter "alsamixer -D hw:1" into your terminal (hw:1 maybe has to be replaced with your soundcards id, find it with "arecord -l". In the alsamixer first make sure that under "PCM Capture" the correct source is selected (whether your sound is plugged into the microphone port or line in. Line in is better, but now available on all cards). Then press tab to go to the capture devices and make sure the selected source (mic or line) is enabled (has the red "CAPTURE" string on bottom). If it isn't, press space to enable. Also best set the dB gain to somewhere around zero. Hit your terminal with a "sudo alsactl store" to save the settings. If your settings are still reset after a reboot, follow this https://dev.to/luisabianca/fix-alsactl-store-that-does-not-save-alsamixer-settings-130i
+	sudo apt-get install libasound2-dev
+	sudo apt-get install scons
 
-Make sure your sound source is plugged in but nothing is played back, then run the code with the "-i" flag to determine background noise levels. If something played during that time (even just a notification sound) you'll have to redo it. Also redo it if you change something about your audio setup. Then run the code as usual and everything should work.
+
+
+# Preparation
+1. Plug 2 strips to the GPIO pins. Not all are usable, sticking with Pins 13 and 18 is safe. Enter the length of the strips to LED_COUNT, the pin to GPIO_PIN and whether you want to reverse the order into REVERSE. Hereby the defines with "\_0" are for the spectrum and "\_1" for the waterfall.
+
+2. Plug in a soundcard and either a microphone or use an audio splitter to route the sound going to your speakers into the soundcard (use the cyan Line port in that case)
+
+3. Determine the device and subdevice ID of your soundcard through `arecord -l`
+
+4. Use `alsamixer -D hw:k` where k is your device ID. Make sure  "PCM Capture" is set to the correct port. Go to the capture devices and enable your chosen device by pressing space such that it says "CAPTURE". Save the settings with `sudo alsactl store`. If they revert after reboot, use [this](https://dev.to/luisabianca/fix-alsactl-store-that-does-not-save-alsamixer-settings-130i "this").
+
+5. *Optional*. Run `sudo ./raspthetics -i` once while nothing is played back to determine the background noise level. The main code will then be able to disable the LEDs if only noise is present.
+
+#Usage
+
+Just run the code with `sudo ./raspthetics -c1 -d0` if 1 is your card ID and 0 is your device ID. Card 1 and device 0 are the default.
+
+#More settings
+
+You can change quite some stuff about the effect. Look into the defines in main.c, I tried documenting them throroughly.
