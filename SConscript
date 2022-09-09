@@ -62,7 +62,7 @@ objs = []
 for src in srcs:
    objs.append(tools_env.Object(src))
 
-test = tools_env.Program('test', objs + tools_env['LIBS'])
+test = tools_env.Program('raspthetics', objs + tools_env['LIBS'])
 
 Default([test, ws2811_lib])
 
