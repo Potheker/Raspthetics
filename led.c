@@ -11,6 +11,7 @@
 #include <stdarg.h>
 #include <getopt.h>
 #include <math.h>
+#include <stdbool.h>
 
 #include "rpi_ws281x/clk.h"
 #include "rpi_ws281x/gpio.h"
@@ -18,14 +19,21 @@
 #include "rpi_ws281x/pwm.h"
 #include "rpi_ws281x/ws2811.h"
 
+
 //Options for ws2812
 #define TARGET_FREQ             WS2811_TARGET_FREQ
 #define GPIO_PIN_0              18
 #define GPIO_PIN_1              13
 #define DMA                     10
-#define STRIP_TYPE              WS2811_STRIP_GBR	// WS2812/SK6812RGB integrated chip+leds
+#define STRIP_TYPE              WS2811_STRIP_GBR	//WS2812/SK6812RGB integrated chip+leds
 
-#define SHIFT_0                 10                  //Shifts LEDs on strip 0
+//Shifts LEDs on strips
+#define SHIFT_0                 10 
+#define SHIFT_1                 0                  
+
+//Reverses the strips
+#define REVERSE_0               false
+#define REVERSE_1               true
 
 //Color
 #define saturation 1000 //Planning to make this a variable
@@ -60,6 +68,7 @@ ws2811_t ledstring =
     },
 };
 
+//Applys changes
 int render(){
     int ret;
     if ((ret = ws2811_render(&ledstring)) != WS2811_SUCCESS){
@@ -204,25 +213,24 @@ void write_color(int channel, int ledID, float value){
 
 void led_tidy(){
     ws2811_fini(&ledstring);
+    free(leds0);
+    free(leds1);
 }
 
-//Add a new color at the top of the waterfall (with hue \in [0,count0] cause it is dependent on the output of the Spectrum Analyzer effect)
+//Add a new color at the top of the waterfall
 void waterfall_add(float value, float hue){
-    //printf("%f\n",value);
-    //Make all others go one down
-    /*for(int i = count1-1;i>0;i--){
-        ledstring.channel[1].leds[i] = ledstring.channel[1].leds[i-1];
-    }*/
-    
-    for(int i = 0;i<(count1 - 1);i++){
+    if(REVERSE_1){
+        for(int i = 0;i<(count1 - 1);i++){
         ledstring.channel[1].leds[i] = ledstring.channel[1].leds[i+1];
+        }
+        ledstring.channel[1].leds[count1-1] = getColor(led_hue_natural(hue),value);
     }
-
-    //hue is \in [0,count0] (because of how it is calculated) and we want to push it away from the middle (because otherwise it is almost always in the mid)
-    //We do that by first calculating hue = hue*2/count0-1 to make it \in [-1,1], then apply f(x) = x^(1/10) (10th root, we can take any n-th root, the higher n is the more it's pushed from the middle) which pushes it away from 0 and to +-1
-    //Then we reverse the transformation by (hue+1)/2*count0
-    int negative = hue < count0/2.;
-    hue = (      pow(fabs(hue*2./count0-1.) ,1./10.) * (1.-negative*2.)    +1.)/2.*count0;
-    //ledstring.channel[1].leds[0] = getColor(led_hue_natural(hue),value);
-    ledstring.channel[1].leds[count1-1] = getColor(led_hue_natural(hue),value);
+    else{
+        for(int i = count1-1;i>0;i--){
+        ledstring.channel[1].leds[i] = ledstring.channel[1].leds[i-1];
+        }
+        ledstring.channel[1].leds[0] = getColor(led_hue_natural(hue),value);
+    }
+    
+    
 }

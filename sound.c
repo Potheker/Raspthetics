@@ -5,6 +5,9 @@
 
 #define TESTRUNS 200
 
+/*
+    Opens the device
+*/
 int initialize_sound(snd_pcm_t **capture_handle, snd_pcm_format_t format, unsigned int *rate, short* channels, char* hwid) {
   	snd_pcm_hw_params_t *hw_params;
   	int err;
@@ -97,6 +100,9 @@ int initialize_sound(snd_pcm_t **capture_handle, snd_pcm_format_t format, unsign
     return 0;
 }
 
+/*
+    Read current recording from alsa
+*/
 int read_sound(snd_pcm_t *capture_handle, float *buffer, int frames){
     int err;
     if ((err = snd_pcm_readi (capture_handle, buffer, frames)) != frames) {
@@ -106,6 +112,9 @@ int read_sound(snd_pcm_t *capture_handle, float *buffer, int frames){
     return 0;
 }
 
+/*
+    Reads the info which is determined by running the code with "-i"
+*/
 int read_hardware_info(float* offset, float* noise_level){
     FILE *ptr;
     if(!(ptr = fopen("hardware.info","r")))
@@ -121,7 +130,9 @@ int read_hardware_info(float* offset, float* noise_level){
     return 0;
 }
 
-
+/*
+    Tests to see if some slight form of constant voltage is at the port (mitigates some noise)
+*/
 int find_soundcard_parameters(float* offset, snd_pcm_t* capture_handle, float* alsa_buffer, int frames){
 
     printf("running test...\n");
@@ -129,12 +140,10 @@ int find_soundcard_parameters(float* offset, snd_pcm_t* capture_handle, float* a
     //Calculate average Output while (hopefully) nothing is playing
     double x = 0;
     for(int i = 0;i<TESTRUNS;i++){
-        //Read from ALSA
         if(read_sound(capture_handle, alsa_buffer, frames) != 0){
             printf("Sound read error");
             return 1;
         }
-        //Add to offset to calculate the average afterwards
         for(int j = 0;j<frames;j++){
             x += alsa_buffer[j];
         }
