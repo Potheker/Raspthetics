@@ -9,7 +9,7 @@ An audio spectrum analyzer for the Raspberry Pi, using a soundcard and an addres
 
 
 # Preparation
-1. Plug 2 strips to the GPIO pins. Not all are usable, sticking with Pins 13 and 18 is safe. Enter the length of the strips to LED_COUNT, the pin to GPIO_PIN and whether you want to reverse the order into REVERSE. Hereby the defines with "\_0" are for the spectrum and "\_1" for the waterfall.
+1. Plug 2 strips to the GPIO pins. Not all are usable, sticking with Pins 13 and 18 is safe. Enter the length of the strips to LED_COUNT, the pin to GPIO_PIN and whether you want to reverse the order into REVERSE. Hereby the defines with "\_0" are for the spectrum and "\_1" for the waterfall. Also you may want to change the STRIP_TYPE and TARGET_FREQ. Defaults are for a generic ws2812b.
 
 2. Plug in a soundcard and either a microphone or use an audio splitter to route the sound going to your speakers into the soundcard (use the cyan Line port in that case)
 
