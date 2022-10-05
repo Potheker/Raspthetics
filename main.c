@@ -216,14 +216,6 @@ void *calculate_and_render(){
         */
         for(int j = 0;j<USED_OUTPUTS;j++) {
             float x = sqrt(powf(cpx_out[j+1].r,2)+powf(cpx_out[j+1].i,2));
-            if(j == 3)
-                x -= 0.0652*vol;
-            if(j == 4)
-                x -= 0.08326*vol;
-            if(j == 5)
-                x -= 0.018*vol;
-            if(x < 0)
-                x = 0;
             fft_out[j] = 20*log10(x);
 
             fft_out[j] += 4.5f*log2((j+1)*(float)rate*pow((float)FRAMES,-1)/1000); //We add 4.5dB per octave because high frequencies are perceived louder (-> FF Pro-Q 3 manual)
