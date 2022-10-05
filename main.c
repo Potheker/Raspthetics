@@ -81,8 +81,6 @@ float noise_level = 999999;   //Initialy set high, so it doesn't interfere with 
 short channels;
 unsigned int rate = 44100;
 
-//TEMP
-int count = 0;
 /*
 
     We have 2 threads: The alsa thread reads sound and this thread calculates the effects
@@ -107,9 +105,6 @@ void *calculate_and_render(){
     for(int i = 0;i<FRAMES;i++){
         window[i] = 0.54f - 0.46f*cos(2.f*M_PI*(float)i/(FRAMES-1));
     }
-
-    //DEBUG
-    struct timespec spec;
 
     //Wait a bit for the alsa thread (otherwise we have some corrupted readings and it may initialy set the volume too high)
     usleep(300000);
@@ -336,18 +331,6 @@ void *calculate_and_render(){
                 run = false;            //Tell alsa thread to exit
                 return 0;
             }
-        }
-        if(++count == 100){
-            clock_gettime(CLOCK_REALTIME, &spec);
-        }
-        if(count == 3100){
-            
-            struct timespec specc;
-            clock_gettime(CLOCK_REALTIME, &specc);
-
-            printf("3000 frames in %ld:%ld\n",specc.tv_sec-spec.tv_sec,specc.tv_nsec-spec.tv_nsec);
-            printf("3000 frames in %ld:%ld\n",spec.tv_sec,spec.tv_nsec);
-            printf("3000 frames in %ld:%ld\n",specc.tv_sec,specc.tv_nsec);
         }
     }
     kiss_fftr_free(cfg);
