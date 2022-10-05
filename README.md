@@ -3,8 +3,7 @@ An audio spectrum analyzer for the Raspberry Pi, using a soundcard and an addres
 
 # Prerequisites
 
-	sudo apt-get install libasound2-dev
-	sudo apt-get install scons
+	sudo apt-get install libasound2-dev scons
 
 
 
