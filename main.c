@@ -16,6 +16,8 @@
 #include <float.h>
 #include <stdbool.h>
 
+#include <time.h>
+
 #include "KissFFT/kiss_fft.h"
 #include "KissFFT/kiss_fftr.h"
 
@@ -24,10 +26,11 @@
 
 //Options for ws2812
 #define LED_COUNT_0             151
+//#define LED_COUNT_0             151
 #define LED_COUNT_1             143
 
 //Range of y-axis on the spectrum analyzer (see "VOLUME SCALING" for details)
-#define lowdb 30.f
+#define lowdb 20.f
 #define highdb 50.f
 
 //Sound & FFT
@@ -41,8 +44,8 @@
     wave (high FRAMES), resulting in a more accurate spectrum.
 
 */
-#define ALSA_FRAMES         32                      
-#define FRAME_FACTOR        128                     
+#define ALSA_FRAMES         256                      
+#define FRAME_FACTOR        16                     
 #define FRAMES              ALSA_FRAMES*FRAME_FACTOR
 #define USED_OUTPUTS        FRAMES/2-1              //I forgot why I defined that
 
@@ -55,13 +58,14 @@
 
 //Asethetics
 #define VOL_REL             4096                    //Volume release, determines how long a loud part ducks the brightness (see "VOLUME SCALING" for details)  
-#define WATERFALL_PUSH      0.1                     //How much the waterfall color is pushed away from the middle (see "WATERFALL EFFECT" for details)     
+#define WATERFALL_PUSH      0.2                     //How much the waterfall color is pushed away from the middle (see "WATERFALL EFFECT" for details)     
 
 //Needed for testing noise levels
 short test = -1;
 float testmax = FLT_MAX;
 
 float* alsa_buffer;   //Buffer for alsa
+float* window;
 
 //Threads
 int alsa_curr_index = 0; //The index (of the als_buffer) to which alsa is currently writing
@@ -77,6 +81,8 @@ float noise_level = 999999;   //Initialy set high, so it doesn't interfere with 
 short channels;
 unsigned int rate = 44100;
 
+//TEMP
+int count = 0;
 /*
 
     We have 2 threads: The alsa thread reads sound and this thread calculates the effects
@@ -97,6 +103,13 @@ void *calculate_and_render(){
     //For saving volumes to scale the wave
     float last_volumes[VOL_REL] = {0};
     short last_volumes_index = 0;
+
+    for(int i = 0;i<FRAMES;i++){
+        window[i] = 0.54f - 0.46f*cos(2.f*M_PI*(float)i/(FRAMES-1));
+    }
+
+    //DEBUG
+    struct timespec spec;
 
     //Wait a bit for the alsa thread (otherwise we have some corrupted readings and it may initialy set the volume too high)
     usleep(300000);
@@ -180,10 +193,11 @@ void *calculate_and_render(){
             }
             vol = pow(vol,-1);
         }
+
         
-        //Now we scale all the readings and the waterfall amp with respect to the volume
+        //Now we scale all the readings and the waterfall amp with respect to the volume and apply the Hamming-Window
         for(int j = 0;j<FRAMES;j++) {
-            fft_in[j] *= vol;
+            fft_in[j] *= vol*window[j];
         }
         waterfall_value *= vol;
 
@@ -201,7 +215,17 @@ void *calculate_and_render(){
             relative to 1khz.
         */
         for(int j = 0;j<USED_OUTPUTS;j++) {
-            fft_out[j] = 20*log10(sqrt(powf(cpx_out[j+1].r,2)+powf(cpx_out[j+1].i,2)));
+            float x = sqrt(powf(cpx_out[j+1].r,2)+powf(cpx_out[j+1].i,2));
+            if(j == 3)
+                x -= 0.0652*vol;
+            if(j == 4)
+                x -= 0.08326*vol;
+            if(j == 5)
+                x -= 0.018*vol;
+            if(x < 0)
+                x = 0;
+            fft_out[j] = 20*log10(x);
+
             fft_out[j] += 4.5f*log2((j+1)*(float)rate*pow((float)FRAMES,-1)/1000); //We add 4.5dB per octave because high frequencies are perceived louder (-> FF Pro-Q 3 manual)
         }
 
@@ -259,6 +283,10 @@ void *calculate_and_render(){
             //Now we want values in the interval [lowdb,highdb] to transformed into brightness values in [0,1]
             max = (lowdb-max)/(lowdb-highdb);
 
+            //See below (WATERFALL EFFECT)
+            waterfall_hue += (j+1)*max;
+            value_sum += max;
+
             //Cutoffs
             if(max < 0){
                 max = 0;
@@ -269,10 +297,6 @@ void *calculate_and_render(){
 
             //Write the calculated brightness (color is calculated in led.c)
             write_color(0,j,max);
-
-            //See below (WATERFALL EFFECT)
-            waterfall_hue += (j+1)*max;
-            value_sum += max;
 
         }
 
@@ -321,8 +345,21 @@ void *calculate_and_render(){
                 return 0;
             }
         }
+        if(++count == 100){
+            clock_gettime(CLOCK_REALTIME, &spec);
+        }
+        if(count == 3100){
+            
+            struct timespec specc;
+            clock_gettime(CLOCK_REALTIME, &specc);
+
+            printf("3000 frames in %ld:%ld\n",specc.tv_sec-spec.tv_sec,specc.tv_nsec-spec.tv_nsec);
+            printf("3000 frames in %ld:%ld\n",spec.tv_sec,spec.tv_nsec);
+            printf("3000 frames in %ld:%ld\n",specc.tv_sec,specc.tv_nsec);
+        }
     }
     kiss_fftr_free(cfg);
+    free(window);
     return 0;
 }
 
@@ -359,6 +396,7 @@ int main(int argc, char* argv[])
     fprintf(stdout, "audio interface prepared\n");
 
     //Create buffer
+    window = malloc(FRAMES*sizeof(float));
     alsa_buffer = malloc(snd_pcm_format_width(format) / 8*channels* FRAMES * BUFFER_OVERSIZE);  
     fprintf(stdout, "buffers allocated\n");
 
