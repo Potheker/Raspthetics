@@ -12,7 +12,7 @@ An audio spectrum analyzer for the Raspberry Pi, using a soundcard and an addres
 
 2. Plug in a soundcard and either a microphone or use an audio splitter to route the sound going to your speakers into the soundcard (use the cyan Line port in that case)
 
-3. Determine the device and subdevice ID of your soundcard through `arecord -l`
+3. Determine the card and subdevice ID of your soundcard through `arecord -l`
 
 4. Use `alsamixer -D hw:k` where k is your device ID. Make sure  "PCM Capture" is set to the correct port. Go to the capture devices and enable your chosen device by pressing space such that it says "CAPTURE". Save the settings with `sudo alsactl store`. If they revert after reboot, use [this](https://dev.to/luisabianca/fix-alsactl-store-that-does-not-save-alsamixer-settings-130i "this").
 
