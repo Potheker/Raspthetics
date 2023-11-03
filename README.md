@@ -14,7 +14,7 @@ An audio spectrum analyzer for the Raspberry Pi, using a soundcard and an addres
 
 3. Determine the card and subdevice ID of your soundcard through `arecord -l`
 
-4. Use `alsamixer -D hw:k` where k is your device ID. Make sure  "PCM Capture" is set to the correct port. Go to the capture devices and enable your chosen device by pressing space such that it says "CAPTURE". Save the settings with `sudo alsactl store`. If they revert after reboot, use [this](https://dev.to/luisabianca/fix-alsactl-store-that-does-not-save-alsamixer-settings-130i "this").
+4. Use `alsamixer -D hw:k` where k is your device ID. Make sure  "PCM Capture" is set to the correct port. Go to the capture devices and enable your chosen device by pressing space such that it says "CAPTURE" in red at the bottom. Save the settings with `sudo alsactl store`. If they revert after reboot, use [this](https://dev.to/luisabianca/fix-alsactl-store-that-does-not-save-alsamixer-settings-130i "this").
 
 5. *Optional*. Run `sudo ./raspthetics -i` once while nothing is played back to determine the background noise level. The main code will then be able to disable the LEDs if only noise is present.
 
